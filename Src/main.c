@@ -73,7 +73,18 @@ volatile uint8_t isr_flags = 0;
 // Commands that we will receive from the PC
 const uint8_t COMMAND_CHANGE_FREQ[] = "changefreq"; // Change the frequency
 const uint8_t COMMAND_STOP[]        = "stop"; // Go to stop mode
-
+// below are the new added commands -xuxin 
+const uint8_t COMMAND_STANDBY[]     = "standby";
+const uint8_t COMMAND_CHANGE_DUT[]  = "changedut";
+const uint8_t COMMAND_PWM_MAN[]     = "pwmman";
+const uint8_t COMMAND_LED_PWM[]     = "ledpwm";
+const uint8_t COMMAND_LED_MAN[]     = "ledman";
+const uint8_t COMMAND_LED_ON[]      = "ledon";
+const uint8_t COMMAND_LED_OFF[]     = "ledoff";
+const uint8_t COMMAND_ACC_ON[]      = "accon";
+const uint8_t COMMAND_ACC_OFF[]     = "accoff";
+const uint8_t COMMAND_MUTE[]        = "mute";
+const uint8_t COMMAND_UNMUTE[]      = "unmute";
 // Buffer for command
 static uint8_t line_ready_buffer[LINE_BUFFER_SIZE]; // Stable buffer for main
 
@@ -91,9 +102,22 @@ void handle_new_line();
 
 // Commands
 void go_to_stop();
-
+void go_to_standby(void);
 // Helper functions
 void init_codec_and_play();
+// add  corrponding functions delare for uart commands
+// for PWM and LED
+void change_freq(void);
+void change_duty_cycle(void);
+void set_pwm_manual(void);
+void led_set_pwm_mode(void);
+void led_set_manual_mode(void);
+void led_turn_on(void);
+void led_turn_off(void);
+
+// Commands - Accelerometer
+void acc_enable(void);
+void acc_disable(void);
 
 /* USER CODE END PFP */
 
@@ -265,23 +289,92 @@ void CDC_ReceiveCallBack(uint8_t *buf, uint32_t len)
 */
 void handle_new_line()
 {
+  //add commands for PWM
   if (memcmp(line_ready_buffer, COMMAND_CHANGE_FREQ, sizeof(COMMAND_CHANGE_FREQ)) == 0)
   {
-    change_freq();
+      change_freq();
+      CDC_Transmit_FS((uint8_t*)"Frequency changed\r\n", 19);
   }
-
+  else if (memcmp(line_ready_buffer, COMMAND_CHANGE_DUT, sizeof(COMMAND_CHANGE_DUT)) == 0) {
+      change_duty_cycle();
+      CDC_Transmit_FS((uint8_t*)"Duty cycle changed\r\n", 20);
+  }
+  else if (memcmp(line_ready_buffer, COMMAND_PWM_MAN, sizeof(COMMAND_PWM_MAN)) == 0) {
+      set_pwm_manual();
+      CDC_Transmit_FS((uint8_t*)"Manual PWM setup start\r\n", 24);
+  }
+  //add commands for LED 
+  else if (memcmp(line_ready_buffer, COMMAND_LED_PWM, sizeof(COMMAND_LED_PWM)) == 0) {
+      led_set_pwm_mode();
+      CDC_Transmit_FS((uint8_t*)"LED Mode: PWM\r\n", 15);
+  }
+  else if (memcmp(line_ready_buffer, COMMAND_LED_MAN, sizeof(COMMAND_LED_MAN)) == 0) {
+      led_set_manual_mode();
+      CDC_Transmit_FS((uint8_t*)"LED Mode: Manual\r\n", 18);
+  }
+  else if (memcmp(line_ready_buffer, COMMAND_LED_ON, sizeof(COMMAND_LED_ON)) == 0) {
+      led_turn_on();
+      CDC_Transmit_FS((uint8_t*)"LED ON\r\n", 8);
+  }
+  else if (memcmp(line_ready_buffer, COMMAND_LED_OFF, sizeof(COMMAND_LED_OFF)) == 0) {
+      led_turn_off();
+      CDC_Transmit_FS((uint8_t*)"LED OFF\r\n", 9);
+  }
+  //FOR POWER modes 
   else if (memcmp(line_ready_buffer, COMMAND_STOP, sizeof(COMMAND_STOP)) == 0)
   {
-    go_to_stop();
+      CDC_Transmit_FS((uint8_t*)"Entering STOP mode...\r\n", 23);
+      go_to_stop();
   }
-
+  else if (memcmp(line_ready_buffer, COMMAND_STANDBY, sizeof(COMMAND_STANDBY)) == 0) {
+      CDC_Transmit_FS((uint8_t*)"Entering STANDBY mode...\r\n", 26);
+      go_to_standby();
+  }
+  //add for audio
+  else if (memcmp(line_ready_buffer, COMMAND_MUTE, sizeof(COMMAND_MUTE)) == 0) {
+      audio_mute();
+      CDC_Transmit_FS((uint8_t*)"Audio Muted\r\n", 13);
+  }
+  else if (memcmp(line_ready_buffer, COMMAND_UNMUTE, sizeof(COMMAND_UNMUTE)) == 0) {
+      audio_unmute();
+      CDC_Transmit_FS((uint8_t*)"Audio Unmuted\r\n", 15);
+  }
+  // for  Accelerometer
+  else if (memcmp(line_ready_buffer, COMMAND_ACC_ON, sizeof(COMMAND_ACC_ON)) == 0) {
+      CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);  
+      acc_enable();
+      CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);
+  }
+  else if (memcmp(line_ready_buffer, COMMAND_ACC_OFF, sizeof(COMMAND_ACC_OFF)) == 0) {
+      acc_disable();
+      CDC_Transmit_FS((uint8_t*)"ACC Disabled\r\n", 14);
+  }
   else
   {
     // If we receive an unknown command, we send an error message back to the PC
     CDC_Transmit_FS((uint8_t*)"Unknown command\r\n", 17);
   }
 }
+void go_to_standby() { /* TODO: Implement Standby */ }
 
+void change_freq() { /* TODO: Implement Freq Change */ }
+void change_duty_cycle() { /* TODO: Implement Duty Change */ }
+void set_pwm_manual() { /* TODO: Implement Manual PWM */ }
+
+void led_set_pwm_mode() { /* TODO */ }
+void led_set_manual_mode() { /* TODO */ }
+void led_turn_on() { /* TODO: Turn on LED4 (Blink) */ }
+void led_turn_off() { /* TODO: Turn off LED4 */ }
+
+void acc_enable() { /* TODO: Start Timer for Acc reading */ }
+void acc_disable() { /* TODO: Stop Timer */ }
+
+void audio_mute() { 
+    // cs43l22_Beep(AUDIO_FREQUENCY_1000); // 可以调用 codec 库函数
+}
+void audio_unmute() { 
+    // cs43l22_SetVolume(DEFAULT_VOLUME);
+}
 void init_codec_and_play()
 {
   cs43l22_init();
