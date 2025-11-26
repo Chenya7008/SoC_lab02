@@ -62,6 +62,24 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+//add variables for PWM
+#define PWM_FREQ_SLOW   20000  // slow
+#define PWM_FREQ_MEDIUM 10000  // mid
+#define PWM_FREQ_FAST   5000   // fast
+uint32_t pwm_period_values[] = {PWM_FREQ_SLOW, PWM_FREQ_MEDIUM, PWM_FREQ_FAST};
+uint8_t  freq_index = 1;       // 默认中速 (0=Slow, 1=Med, 2=Fast)
+
+// add duty cycles 25%, 50%, 75%
+float pwm_duty_values[] = {0.25f, 0.50f, 0.75f};
+uint8_t duty_index = 1;        //  default set 50% (0=25%, 1=50%, 2=75%)
+
+// check led status
+volatile uint8_t led_is_on = 0; 
+
+// maybe for manual mode
+uint8_t is_pwm_manual = 0;
+
+
 const uint8_t ISR_FLAG_RX    = 0x01;  // Received data
 const uint8_t ISR_FLAG_TIM10 = 0x02;  // Timer 10 Period elapsed
 const uint8_t ISR_FLAG_TIM11 = 0x04;  // Timer 10 Period elapsed
@@ -162,7 +180,7 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_Base_Start_IT(&htim10);
 
   /* USER CODE END 2 */
 
@@ -357,8 +375,45 @@ void handle_new_line()
 }
 void go_to_standby() { /* TODO: Implement Standby */ }
 
-void change_freq() { /* TODO: Implement Freq Change */ }
-void change_duty_cycle() { /* TODO: Implement Duty Change */ }
+//add interrupt callback function for change the ARR to change duty
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    //for PWM LED
+    if (htim->Instance == TIM10)
+    {
+        // Green=PD12, Orange=PD13, Red=PD14, Blue=PD15
+        HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12); 
+        
+        // switch flag
+        led_is_on = !led_is_on;
+
+        uint32_t total_period = pwm_period_values[freq_index];//implement the freq ctrl, this is related to the "period" in LAB1
+        uint32_t on_time = (uint32_t)(total_period * pwm_duty_values[duty_index]);//by changing the ratio of on and off ,change the period behavior of led
+        uint32_t off_time = total_period - on_time;
+
+        if (led_is_on)
+        {
+            //  if on, will overflow after reach on_time, then into off
+            __HAL_TIM_SET_AUTORELOAD(htim, on_time);
+        }
+        else
+        {
+            __HAL_TIM_SET_AUTORELOAD(htim, off_time);
+        }
+    }
+    
+}
+
+void change_freq() 
+{ 
+    freq_index++;
+    if (freq_index >= 3) freq_index = 0;
+}
+void change_duty_cycle() 
+{ 
+    duty_index++;
+    if (duty_index >= 3) duty_index = 0;
+}
 void set_pwm_manual() { /* TODO: Implement Manual PWM */ }
 
 void led_set_pwm_mode() { /* TODO */ }
