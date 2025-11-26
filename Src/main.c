@@ -62,7 +62,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+volatile uint32_t last_button_press_time = 0;//simple for debuncing
 volatile uint8_t use_pwm_for_led = 1;//for led mode ctrl,1->pwm mode,0->manual mode
 //add for acc data store 
 int16_t xyz_buffer[3];
@@ -518,6 +518,25 @@ void init_codec_and_play()
     buffer_audio[2 * i + 1] = 10000 * sin(2 * 3.14 * SLOW_SIN_FREQ * i / SAMPLING_RATE);
   }
   cs43l22_play(buffer_audio, 2 * AUDIO_BUFFER_LENGTH);
+}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    
+    if (GPIO_Pin == GPIO_PIN_0)
+    {
+        // Debounce
+        uint32_t current_time = HAL_GetTick();
+        if ((current_time - last_button_press_time) > 200)
+        {
+            last_button_press_time = current_time;
+
+            if (use_pwm_for_led == 0) // Manual Mode
+            {
+                HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+            }
+            
+        }
+    }
 }
 
 /**
