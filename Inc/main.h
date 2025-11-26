@@ -83,6 +83,14 @@ void Error_Handler(void);
 #define BOOT1_GPIO_Port GPIOB
 #define CLK_IN_Pin GPIO_PIN_10
 #define CLK_IN_GPIO_Port GPIOB
+#define Green_Pin GPIO_PIN_12
+#define Green_GPIO_Port GPIOD
+#define Orange_Pin GPIO_PIN_13
+#define Orange_GPIO_Port GPIOD
+#define Red_Pin GPIO_PIN_14
+#define Red_GPIO_Port GPIOD
+#define Blue_Pin GPIO_PIN_15
+#define Blue_GPIO_Port GPIOD
 #define I2S3_MCK_Pin GPIO_PIN_7
 #define I2S3_MCK_GPIO_Port GPIOC
 #define VBUS_FS_Pin GPIO_PIN_9
