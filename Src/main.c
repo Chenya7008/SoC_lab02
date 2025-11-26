@@ -62,6 +62,10 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+
+volatile uint8_t use_pwm_for_led = 1;//for led mode ctrl,1->pwm mode,0->manual mode
+//add for acc data store 
+int16_t xyz_buffer[3];
 //add variables for PWM
 #define PWM_FREQ_SLOW   20000  // slow
 #define PWM_FREQ_MEDIUM 10000  // mid
@@ -179,9 +183,10 @@ int main(void)
   MX_SPI1_Init();
   MX_USB_DEVICE_Init();
   MX_TIM10_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim10);
-
+  BSP_ACCELERO_Init();//init the acc 
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -382,8 +387,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (htim->Instance == TIM10)
     {
         // Green=PD12, Orange=PD13, Red=PD14, Blue=PD15
-        HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12); 
-        
+        if (use_pwm_for_led == 1)//only in pwm mode
+        {
+            HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+        }
         // switch flag
         led_is_on = !led_is_on;
 
@@ -402,6 +409,42 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         }
     }
     
+    //new logic to handle ACC value
+    if (htim->Instance == TIM1)
+    {
+        // 1. 读取加速度计数据
+        BSP_ACCELERO_GetXYZ(xyz_buffer);
+        
+        // xyz_buffer[0] = X, [1] = Y, [2] = Z
+        int16_t x = xyz_buffer[0];
+        int16_t y = xyz_buffer[1];
+        int16_t z = xyz_buffer[2];
+
+        // positive only
+        int16_t abs_x = (x < 0) ? -x : x;
+        int16_t abs_y = (y < 0) ? -y : y;
+        int16_t abs_z = (z < 0) ? -z : z;
+
+        //using the highest value to control led
+        if (abs_x > abs_y && abs_x > abs_z)
+        {
+            // X  -> Orange ON, others OFF
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_15, GPIO_PIN_RESET);
+        }
+        else if (abs_y > abs_x && abs_y > abs_z)
+        {
+            // Y  -> Red ON, others OFF
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
+        }
+        else
+        {
+            // Z  -> Blue ON, others OFF
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_14, GPIO_PIN_RESET);
+        }
+    }
 }
 
 void change_freq() 
@@ -416,13 +459,48 @@ void change_duty_cycle()
 }
 void set_pwm_manual() { /* TODO: Implement Manual PWM */ }
 
-void led_set_pwm_mode() { /* TODO */ }
-void led_set_manual_mode() { /* TODO */ }
-void led_turn_on() { /* TODO: Turn on LED4 (Blink) */ }
-void led_turn_off() { /* TODO: Turn off LED4 */ }
+void led_set_pwm_mode() 
+{ 
+  use_pwm_for_led = 1; 
+}
+void led_set_manual_mode() 
+{
+  use_pwm_for_led = 0;
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET); 
+}
+void led_turn_on() 
+{ 
+  if (use_pwm_for_led == 0)
+    {
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
+    } 
+}
+void led_turn_off() 
+{ 
+  if (use_pwm_for_led == 0)
+    {
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET);
+    } 
+}
 
-void acc_enable() { /* TODO: Start Timer for Acc reading */ }
-void acc_disable() { /* TODO: Stop Timer */ }
+void acc_enable() 
+{
+  if (BSP_ACCELERO_Init() != HAL_OK)
+    
+  {
+        Error_Handler();
+  }
+
+  //start tim1 interrupt, to read acc value
+  HAL_TIM_Base_Start_IT(&htim1);
+
+}
+void acc_disable() 
+{ 
+    HAL_TIM_Base_Stop_IT(&htim1);
+    //off all the leds
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET); 
+}
 
 void audio_mute() { 
     // cs43l22_Beep(AUDIO_FREQUENCY_1000); // 可以调用 codec 库函数
