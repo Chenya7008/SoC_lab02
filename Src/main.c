@@ -378,7 +378,23 @@ void handle_new_line()
     CDC_Transmit_FS((uint8_t*)"Unknown command\r\n", 17);
   }
 }
-void go_to_standby() { /* TODO: Implement Standby */ }
+void go_to_standby() 
+{ // 1. 关闭所有 LED
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
+    // 2. 停止音频
+    // cs43l22_stop();
+
+    // 3. 清除唤醒标志 (Good practice)
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+
+    // 4. (可选) 使能 PA0 Wakeup Pin
+    // 虽然 Lab Guide 说按 Reset 唤醒，但开启这个可以允许长按 User Button 唤醒
+    HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);
+
+    // 5. 进入 STANDBY 模式
+    HAL_PWR_EnterSTANDBYMode();
+}
 
 //add interrupt callback function for change the ARR to change duty
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -503,10 +519,10 @@ void acc_disable()
 }
 
 void audio_mute() { 
-    // cs43l22_Beep(AUDIO_FREQUENCY_1000); // 可以调用 codec 库函数
+    cs43l22_SetMute(1);
 }
 void audio_unmute() { 
-    // cs43l22_SetVolume(DEFAULT_VOLUME);
+    cs43l22_SetMute(0);
 }
 void init_codec_and_play()
 {
@@ -546,6 +562,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void go_to_stop()
 {
   // TODO: Make sure all user LEDS are off
+  //add leds off
+   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
   // To avoid noise during stop mode
   cs43l22_stop();
 
