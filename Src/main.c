@@ -140,7 +140,10 @@ void led_turn_off(void);
 // Commands - Accelerometer
 void acc_enable(void);
 void acc_disable(void);
+void audio_mute(void); 
+void audio_unmute(void);
 
+void sync_audio_with_pwm(uint32_t pwm_ticks);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -187,6 +190,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim10);
   BSP_ACCELERO_Init();//init the acc 
+  init_codec_and_play(pwm_period_values[freq_index]);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -379,20 +383,11 @@ void handle_new_line()
   }
 }
 void go_to_standby() 
-{ // 1. 关闭所有 LED
+{ 
     HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
-
-    // 2. 停止音频
     // cs43l22_stop();
-
-    // 3. 清除唤醒标志 (Good practice)
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
-
-    // 4. (可选) 使能 PA0 Wakeup Pin
-    // 虽然 Lab Guide 说按 Reset 唤醒，但开启这个可以允许长按 User Button 唤醒
     HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);
-
-    // 5. 进入 STANDBY 模式
     HAL_PWR_EnterSTANDBYMode();
 }
 
@@ -428,7 +423,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     //new logic to handle ACC value
     if (htim->Instance == TIM1)
     {
-        // 1. 读取加速度计数据
+       
         BSP_ACCELERO_GetXYZ(xyz_buffer);
         
         // xyz_buffer[0] = X, [1] = Y, [2] = Z
@@ -467,6 +462,9 @@ void change_freq()
 { 
     freq_index++;
     if (freq_index >= 3) freq_index = 0;
+    //for requirement, "Proportional" change
+    sync_audio_with_pwm(pwm_period_values[freq_index]);
+
 }
 void change_duty_cycle() 
 { 
@@ -519,22 +517,25 @@ void acc_disable()
 }
 
 void audio_mute() { 
-    cs43l22_SetMute(1);
+    cs43l22_mute();
 }
 void audio_unmute() { 
-    cs43l22_SetMute(0);
+    cs43l22_unmute();
 }
 void init_codec_and_play()
 {
   cs43l22_init();
   // sine signal
+  //REUSED IN NEW FUNCTION 
   for(int i = 0; i < AUDIO_BUFFER_LENGTH;i++)
   {
     buffer_audio[2 * i] = 10000 * sin(2 * 3.14 * SLOW_SIN_FREQ * i / SAMPLING_RATE);
     buffer_audio[2 * i + 1] = 10000 * sin(2 * 3.14 * SLOW_SIN_FREQ * i / SAMPLING_RATE);
   }
+  
   cs43l22_play(buffer_audio, 2 * AUDIO_BUFFER_LENGTH);
 }
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     
@@ -586,9 +587,28 @@ void go_to_stop()
   // Required otherwise the audio wont work after wakeup
   MX_I2S3_Init();
 
-  init_codec_and_play();
+  init_codec_and_play(pwm_period_values[freq_index]);
 }
 
+void sync_audio_with_pwm(uint32_t pwm_ticks)
+{
+
+    // according　PWM value to freq.
+    //  example : (20000 ticks) -> 10,000,000 / 20,000 = 500 Hz
+    //  (10000 ticks) -> 10,000,000 / 10,000 = 1000 Hz
+    uint16_t calculated_freq = 10000000 / pwm_ticks;
+
+    if (calculated_freq < 100) calculated_freq = 100;
+    if (calculated_freq > 20000) calculated_freq = 20000;
+    // same method of init function
+    for(int i = 0; i < AUDIO_BUFFER_LENGTH; i++)
+    {
+        int16_t sample_value = (int16_t)(10000 * sin(2 * 3.14f * calculated_freq * i / SAMPLING_RATE));
+        buffer_audio[2 * i]     = sample_value;
+        buffer_audio[2 * i + 1] = sample_value;
+    }
+
+}
 /* USER CODE END 4 */
 
 /**
