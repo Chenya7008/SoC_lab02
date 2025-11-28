@@ -67,9 +67,10 @@ volatile uint8_t use_pwm_for_led = 1;//for led mode ctrl,1->pwm mode,0->manual m
 //add for acc data store 
 int16_t xyz_buffer[3];
 //add variables for PWM
-#define PWM_FREQ_SLOW   20000  // slow
-#define PWM_FREQ_MEDIUM 10000  // mid
-#define PWM_FREQ_FAST   5000   // fast
+//PSC of TIM10 is 16799，speed of counter is 0.1ms
+#define PWM_FREQ_SLOW   20000  // slow ,whole period 2s
+#define PWM_FREQ_MEDIUM 10000  // mid,whole period 1s
+#define PWM_FREQ_FAST   5000   // fast,whole period 0.5s
 uint32_t pwm_period_values[] = {PWM_FREQ_SLOW, PWM_FREQ_MEDIUM, PWM_FREQ_FAST};
 uint8_t  freq_index = 1;       // 默认中速 (0=Slow, 1=Med, 2=Fast)
 
@@ -80,7 +81,7 @@ uint8_t duty_index = 1;        //  default set 50% (0=25%, 1=50%, 2=75%)
 // check led status
 volatile uint8_t led_is_on = 0; 
 
-// maybe for manual mode
+// for PWM manual mode,PWM controled by user button 
 uint8_t is_pwm_manual = 0;
 
 
@@ -187,10 +188,11 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_TIM10_Init();
   MX_TIM1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim10);
   BSP_ACCELERO_Init();//init the acc 
-  init_codec_and_play(pwm_period_values[freq_index]);
+  init_codec_and_play();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -368,7 +370,7 @@ void handle_new_line()
   }
   // for  Accelerometer
   else if (memcmp(line_ready_buffer, COMMAND_ACC_ON, sizeof(COMMAND_ACC_ON)) == 0) {
-      CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);  
+      //CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);  
       acc_enable();
       CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);
   }
@@ -464,14 +466,20 @@ void change_freq()
     if (freq_index >= 3) freq_index = 0;
     //for requirement, "Proportional" change
     sync_audio_with_pwm(pwm_period_values[freq_index]);
+    is_pwm_manual = 0;
 
 }
 void change_duty_cycle() 
 { 
+    is_pwm_manual = 0;
     duty_index++;
     if (duty_index >= 3) duty_index = 0;
 }
-void set_pwm_manual() { /* TODO: Implement Manual PWM */ }
+void set_pwm_manual()
+{ 
+    is_pwm_manual = 1;
+    //HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET); 
+}
 
 void led_set_pwm_mode() 
 { 
@@ -541,18 +549,43 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     
     if (GPIO_Pin == GPIO_PIN_0)
     {
-        // Debounce
-        uint32_t current_time = HAL_GetTick();
-        if ((current_time - last_button_press_time) > 200)
-        {
-            last_button_press_time = current_time;
 
-            if (use_pwm_for_led == 0) // Manual Mode
+      if (is_pwm_manual == 1)
+        {
+            if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) // pressed
             {
+                __HAL_TIM_SET_COUNTER(&htim2, 0); // clear TIM2
+                HAL_TIM_Base_Start(&htim2);       // begin count
+            }
+            else // should enable rising/falling interrupt, pressed->interrupt->enter "if"begin count->exit , loose->next time enter interrupt->enter "else" end count
+            {
+                HAL_TIM_Base_Stop(&htim2);        // stop count
+                uint32_t press_time = __HAL_TIM_GET_COUNTER(&htim2); // get time diff
+                
+                // simple filter
+                if (press_time > 100) 
+                {
+                    // set new freq
+                    pwm_period_values[freq_index] = press_time;
+                    sync_audio_with_pwm(press_time);
+                   CDC_Transmit_FS((uint8_t*)"PWM Set Done!\r\n", 15);
+                }
+                 
+            }
+        }
+        // Debounce
+        else if (use_pwm_for_led == 0) //ledman
+        {
+
+            static uint32_t last_time = 0;
+            uint32_t current_time = HAL_GetTick();
+            if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET && (current_time - last_time > 200))
+            {
+                last_time = current_time;
                 HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
             }
-            
         }
+      
     }
 }
 
