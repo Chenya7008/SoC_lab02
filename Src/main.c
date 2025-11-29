@@ -75,7 +75,7 @@ uint32_t pwm_period_values[] = {PWM_FREQ_SLOW, PWM_FREQ_MEDIUM, PWM_FREQ_FAST};
 uint8_t  freq_index = 1;       // 默认中速 (0=Slow, 1=Med, 2=Fast)
 
 // add duty cycles 25%, 50%, 75%
-float pwm_duty_values[] = {0.25f, 0.50f, 0.75f};
+float pwm_duty_values[] = {0.1f, 0.50f, 0.9f};
 uint8_t duty_index = 1;        //  default set 50% (0=25%, 1=50%, 2=75%)
 
 // check led status
@@ -629,7 +629,18 @@ void sync_audio_with_pwm(uint32_t pwm_ticks)
     // according　PWM value to freq.
     //  example : (20000 ticks) -> 10,000,000 / 20,000 = 500 Hz
     //  (10000 ticks) -> 10,000,000 / 10,000 = 1000 Hz
+
+    if(pwm_ticks >20000 ||pwm_ticks ==20000)
+    {
+        pwm_ticks = 20000;
+    }else if (pwm_ticks >= 10000|| pwm_ticks ==10000){
+      pwm_ticks = 10000;
+    }else {
+      pwm_ticks =5000;
+    }
+    
     uint16_t calculated_freq = 10000000 / pwm_ticks;
+
 
     if (calculated_freq < 100) calculated_freq = 100;
     if (calculated_freq > 20000) calculated_freq = 20000;
