@@ -31,7 +31,7 @@
 #include "usbd_cdc_if.h"
 #include "cs43l22.h"
 #include "math.h"
-
+#include <stdlib.h>
 #include "stm32f4_discovery.h"
 #include "stm32f4_discovery_accelerometer.h"
 /* USER CODE END Includes */
@@ -72,17 +72,17 @@ int16_t xyz_buffer[3];
 #define PWM_FREQ_MEDIUM 10000  // mid,whole period 1s
 #define PWM_FREQ_FAST   5000   // fast,whole period 0.5s
 uint32_t pwm_period_values[] = {PWM_FREQ_SLOW, PWM_FREQ_MEDIUM, PWM_FREQ_FAST};
-uint8_t  freq_index = 1;       // 默认中速 (0=Slow, 1=Med, 2=Fast)
+volatile uint8_t  freq_index = 1;       //  (0=Slow, 1=Med, 2=Fast)
 
 // add duty cycles 25%, 50%, 75%
 float pwm_duty_values[] = {0.1f, 0.50f, 0.9f};
-uint8_t duty_index = 1;        //  default set 50% (0=25%, 1=50%, 2=75%)
+volatile uint8_t duty_index = 1;        //  default set 50% (0=25%, 1=50%, 2=75%)
 
 // check led status
 volatile uint8_t led_is_on = 0; 
 
 // for PWM manual mode,PWM controled by user button 
-uint8_t is_pwm_manual = 0;
+volatile uint8_t is_pwm_manual = 0;
 
 
 const uint8_t ISR_FLAG_RX    = 0x01;  // Received data
@@ -144,7 +144,7 @@ void acc_disable(void);
 void audio_mute(void); 
 void audio_unmute(void);
 
-void sync_audio_with_pwm(uint32_t pwm_ticks);
+void update_audio_for_pwm(uint32_t pwm_ticks);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -319,62 +319,62 @@ void CDC_ReceiveCallBack(uint8_t *buf, uint32_t len)
 void handle_new_line()
 {
   //add commands for PWM
-  if (memcmp(line_ready_buffer, COMMAND_CHANGE_FREQ, sizeof(COMMAND_CHANGE_FREQ)) == 0)
+  if (memcmp(line_ready_buffer, COMMAND_CHANGE_FREQ, sizeof(COMMAND_CHANGE_FREQ)-1) == 0)
   {
       change_freq();
       CDC_Transmit_FS((uint8_t*)"Frequency changed\r\n", 19);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_CHANGE_DUT, sizeof(COMMAND_CHANGE_DUT)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_CHANGE_DUT, sizeof(COMMAND_CHANGE_DUT)-1) == 0) {
       change_duty_cycle();
       CDC_Transmit_FS((uint8_t*)"Duty cycle changed\r\n", 20);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_PWM_MAN, sizeof(COMMAND_PWM_MAN)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_PWM_MAN, sizeof(COMMAND_PWM_MAN)-1) == 0) {
       set_pwm_manual();
       CDC_Transmit_FS((uint8_t*)"Manual PWM setup start\r\n", 24);
   }
   //add commands for LED 
-  else if (memcmp(line_ready_buffer, COMMAND_LED_PWM, sizeof(COMMAND_LED_PWM)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_LED_PWM, sizeof(COMMAND_LED_PWM)-1) == 0) {
       led_set_pwm_mode();
       CDC_Transmit_FS((uint8_t*)"LED Mode: PWM\r\n", 15);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_LED_MAN, sizeof(COMMAND_LED_MAN)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_LED_MAN, sizeof(COMMAND_LED_MAN)-1) == 0) {
       led_set_manual_mode();
       CDC_Transmit_FS((uint8_t*)"LED Mode: Manual\r\n", 18);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_LED_ON, sizeof(COMMAND_LED_ON)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_LED_ON, sizeof(COMMAND_LED_ON)-1) == 0) {
       led_turn_on();
       CDC_Transmit_FS((uint8_t*)"LED ON\r\n", 8);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_LED_OFF, sizeof(COMMAND_LED_OFF)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_LED_OFF, sizeof(COMMAND_LED_OFF)-1) == 0) {
       led_turn_off();
       CDC_Transmit_FS((uint8_t*)"LED OFF\r\n", 9);
   }
   //FOR POWER modes 
-  else if (memcmp(line_ready_buffer, COMMAND_STOP, sizeof(COMMAND_STOP)) == 0)
+  else if (memcmp(line_ready_buffer, COMMAND_STOP, sizeof(COMMAND_STOP)-1) == 0)
   {
       CDC_Transmit_FS((uint8_t*)"Entering STOP mode...\r\n", 23);
       go_to_stop();
   }
-  else if (memcmp(line_ready_buffer, COMMAND_STANDBY, sizeof(COMMAND_STANDBY)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_STANDBY, sizeof(COMMAND_STANDBY)-1) == 0) {
       CDC_Transmit_FS((uint8_t*)"Entering STANDBY mode...\r\n", 26);
       go_to_standby();
   }
   //add for audio
-  else if (memcmp(line_ready_buffer, COMMAND_MUTE, sizeof(COMMAND_MUTE)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_MUTE, sizeof(COMMAND_MUTE)-1) == 0) {
       audio_mute();
       CDC_Transmit_FS((uint8_t*)"Audio Muted\r\n", 13);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_UNMUTE, sizeof(COMMAND_UNMUTE)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_UNMUTE, sizeof(COMMAND_UNMUTE)-1) == 0) {
       audio_unmute();
       CDC_Transmit_FS((uint8_t*)"Audio Unmuted\r\n", 15);
   }
   // for  Accelerometer
-  else if (memcmp(line_ready_buffer, COMMAND_ACC_ON, sizeof(COMMAND_ACC_ON)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_ACC_ON, sizeof(COMMAND_ACC_ON)-1) == 0) {
       //CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);  
       acc_enable();
       CDC_Transmit_FS((uint8_t*)"ACC Enabled\r\n", 13);
   }
-  else if (memcmp(line_ready_buffer, COMMAND_ACC_OFF, sizeof(COMMAND_ACC_OFF)) == 0) {
+  else if (memcmp(line_ready_buffer, COMMAND_ACC_OFF, sizeof(COMMAND_ACC_OFF)-1) == 0) {
       acc_disable();
       CDC_Transmit_FS((uint8_t*)"ACC Disabled\r\n", 14);
   }
@@ -429,31 +429,27 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         BSP_ACCELERO_GetXYZ(xyz_buffer);
         
         // xyz_buffer[0] = X, [1] = Y, [2] = Z
-        int16_t x = xyz_buffer[0];
-        int16_t y = xyz_buffer[1];
-        int16_t z = xyz_buffer[2];
-
-        // positive only
-        int16_t abs_x = (x < 0) ? -x : x;
-        int16_t abs_y = (y < 0) ? -y : y;
-        int16_t abs_z = (z < 0) ? -z : z;
+         // positive only because direction
+        int16_t abs_x = abs(xyz_buffer[0]);
+        int16_t abs_y = abs(xyz_buffer[1]);
+        int16_t abs_z = abs(xyz_buffer[2]);
 
         //using the highest value to control led
         if (abs_x > abs_y && abs_x > abs_z)
         {
-            // X  -> Orange ON, others OFF
+            // Z  -> blue ON, others OFF
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_15, GPIO_PIN_RESET);
         }
         else if (abs_y > abs_x && abs_y > abs_z)
         {
-            // Y  -> Red ON, others OFF
+            // x  -> Red ON, others OFF
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
         }
         else
         {
-            // Z  -> Blue ON, others OFF
+            // Y  -> orange ON, others OFF
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_14, GPIO_PIN_RESET);
         }
@@ -465,7 +461,7 @@ void change_freq()
     freq_index++;
     if (freq_index >= 3) freq_index = 0;
     //for requirement, "Proportional" change
-    sync_audio_with_pwm(pwm_period_values[freq_index]);
+    update_audio_for_pwm(pwm_period_values[freq_index]);
     is_pwm_manual = 0;
 
 }
@@ -487,22 +483,22 @@ void led_set_pwm_mode()
 }
 void led_set_manual_mode() 
 {
+  is_pwm_manual = 0;
   use_pwm_for_led = 0;
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET); 
 }
 void led_turn_on() 
 { 
-  if (use_pwm_for_led == 0)
-    {
+        if(use_pwm_for_led == 0)//ledman
+        {
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
-    } 
+        }
 }
 void led_turn_off() 
 { 
-  if (use_pwm_for_led == 0)
-    {
+        if(use_pwm_for_led == 0)//ledman
+        //HAL_TIM_Base_Stop_IT(&htim10);
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET);
-    } 
 }
 
 void acc_enable() 
@@ -567,14 +563,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
                 {
                     // set new freq
                     pwm_period_values[freq_index] = press_time;
-                    sync_audio_with_pwm(press_time);
+                    update_audio_for_pwm(press_time);
                    CDC_Transmit_FS((uint8_t*)"PWM Set Done!\r\n", 15);
                 }
                  
             }
         }
         // Debounce
-        else if (use_pwm_for_led == 0) //ledman
+        if (use_pwm_for_led == 0) //ledman
         {
 
             static uint32_t last_time = 0;
@@ -623,7 +619,7 @@ void go_to_stop()
   init_codec_and_play(pwm_period_values[freq_index]);
 }
 
-void sync_audio_with_pwm(uint32_t pwm_ticks)
+void update_audio_for_pwm(uint32_t pwm_ticks)
 {
 
     // according　PWM value to freq.
