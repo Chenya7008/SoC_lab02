@@ -62,6 +62,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+extern USBD_HandleTypeDef hUsbDeviceFS;
 volatile uint32_t last_button_press_time = 0;//simple for debuncing
 volatile uint8_t use_pwm_for_led = 1;//for led mode ctrl,1->pwm mode,0->manual mode
 //add for acc data store 
@@ -88,7 +89,7 @@ volatile uint8_t is_pwm_manual = 0;
 const uint8_t ISR_FLAG_RX    = 0x01;  // Received data
 const uint8_t ISR_FLAG_TIM10 = 0x02;  // Timer 10 Period elapsed
 const uint8_t ISR_FLAG_TIM11 = 0x04;  // Timer 10 Period elapsed
-
+const uint8_t ISR_FLAG_ACC = 0x08;
 // This is the only variable that we will modify both in the ISR and in the main loop
 // It has to be declared volatile to prevent the compiler from optimizing it out.
 volatile uint8_t isr_flags = 0;
@@ -122,7 +123,7 @@ void SystemClock_Config(void);
 
 // Interrupt handlers
 void handle_new_line();
-
+void handle_accelerometer(void);
 // Commands
 void go_to_stop();
 void go_to_standby(void);
@@ -215,6 +216,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (isr_flags & ISR_FLAG_ACC)
+    {
+      isr_flags &= ~ISR_FLAG_ACC; 
+      handle_accelerometer();    
+    }
   }
   /* USER CODE END 3 */
 }
@@ -381,13 +387,13 @@ void handle_new_line()
   else
   {
     // If we receive an unknown command, we send an error message back to the PC
-    CDC_Transmit_FS((uint8_t*)"Unknown command\r\n", 17);
+    //CDC_Transmit_FS((uint8_t*)"Unknown command\r\n", 17);
   }
 }
 void go_to_standby() 
 { 
     HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
-    // cs43l22_stop();
+    cs43l22_stop();
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
     HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);
     HAL_PWR_EnterSTANDBYMode();
@@ -421,8 +427,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             __HAL_TIM_SET_AUTORELOAD(htim, off_time);
         }
     }
-    
+    if (htim->Instance == TIM1) 
+    {
+        
+        isr_flags |= ISR_FLAG_ACC; 
+    }
     //new logic to handle ACC value
+    /*
     if (htim->Instance == TIM1)
     {
        
@@ -453,9 +464,38 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
             HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_14, GPIO_PIN_RESET);
         }
-    }
+    }*/
 }
+void handle_accelerometer(void){
 
+        BSP_ACCELERO_GetXYZ(xyz_buffer);
+        
+        // xyz_buffer[0] = X, [1] = Y, [2] = Z
+         // positive only because direction
+        int16_t abs_x = abs(xyz_buffer[0]);
+        int16_t abs_y = abs(xyz_buffer[1]);
+        int16_t abs_z = abs(xyz_buffer[2]);
+
+        //using the highest value to control led
+        if (abs_x > abs_y && abs_x > abs_z)
+        {
+            // Z  -> blue ON, others OFF
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_15, GPIO_PIN_RESET);
+        }
+        else if (abs_y > abs_x && abs_y > abs_z)
+        {
+            // x  -> Red ON, others OFF
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
+        }
+        else
+        {
+            // Y  -> orange ON, others OFF
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13 | GPIO_PIN_14, GPIO_PIN_RESET);
+        }
+}
 void change_freq() 
 { 
     freq_index++;
@@ -599,7 +639,8 @@ void go_to_stop()
 
   // Required otherwise the audio wont work after wakeup
   HAL_I2S_DeInit(&hi2s3);
-
+  //add for usb uart
+  USBD_DeInit(&hUsbDeviceFS);
   // We disable the systick interrupt before going to stop (1ms tick)
   // Otherwise we would be woken up every 1ms
   HAL_SuspendTick();
@@ -614,8 +655,8 @@ void go_to_stop()
   HAL_ResumeTick();
 
   // Required otherwise the audio wont work after wakeup
-  MX_I2S3_Init();
-
+  MX_I2S3_Init(); 
+  MX_USB_DEVICE_Init();
   init_codec_and_play(pwm_period_values[freq_index]);
 }
 
